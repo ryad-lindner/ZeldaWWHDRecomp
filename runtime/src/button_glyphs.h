@@ -1,6 +1,8 @@
 // Alternate button appearance: face colours/placement and L1/R1/L2/R2 shoulder labels.
-// By label already binds Xbox A to game A: the letters must NOT be transposed. The same palette
-// styles the dialog icon font and the HUD's button backgrounds; keyboard bindings are separate.
+// Each Wii U face button is drawn as the Xbox button bound to it (input_map::face_glyph_targets):
+// by label keeps every letter, a custom arrangement such as the sword on Xbox X shows X there. The
+// same palette styles the dialog icon font and the HUD's button backgrounds; keyboard bindings are
+// separate.
 #pragma once
 #include <cstdint>
 #include <string_view>
@@ -16,6 +18,14 @@ inline int shoulder_text(std::string_view name) {
     if (name == "T_R_00") return 1;
     if (name == "T_ZL_00") return 2;
     if (name == "T_ZR_00") return 3;
+    return -1;
+}
+// The HUD's letter panes (plain 'A'/'B'/'X'/'Y' text) inside the face button pictures.
+inline int face_text(std::string_view name) {
+    if (name == "T_A_00" || name == "T_A_01") return 0;
+    if (name == "T_B_00") return 1;
+    if (name == "T_X_00") return 2;
+    if (name == "T_Y_00") return 3;
     return -1;
 }
 inline int face_picture(std::string_view name) {
@@ -64,7 +74,7 @@ void prepare_text_box(uint32_t text_box, Cpu* cpu = nullptr);
 void draw_text_box(Cpu* c, PpcFunc draw);
 
 // Compose the HUD's face-button placement with the existing pane/aspect matrix calculation:
-// by label puts A south, B east, X west and Y north, moving their complete groups together.
+// each group moves to its Xbox button's place (A south, B east, X west, Y north) as a whole.
 void calculate_pane(Cpu* c, PpcFunc calculate);
 
 // a save state was loaded: forget which text boxes were rebuilt for by label (savestate.cpp)

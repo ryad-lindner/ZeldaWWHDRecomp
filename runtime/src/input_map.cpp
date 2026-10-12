@@ -215,6 +215,18 @@ int face_input(int action) {
     return p != kPadNone ? p : kFaceByPosition[action - kA];
 }
 
+bool face_glyph_targets(const Mapping& m, int out[4]) {
+    if (face_layout(m) == FaceLayout::kPosition) return false;
+    bool used[4] = {};
+    for (int i = 0; i < 4; i++) {
+        const int p = m.pad[kA + i] - kPadA;
+        if (p < 0 || p > 3 || used[p]) return false;
+        used[p] = true;
+        out[i] = p;
+    }
+    return true;
+}
+
 const char* face_layout_label(FaceLayout l) {
     switch (l) {
     case FaceLayout::kPosition: return "by position (Nintendo)";

@@ -84,6 +84,10 @@ enum class FaceLayout { kPosition, kLabels, kCustom };
 FaceLayout face_layout(const Mapping& m);
 void apply_face_layout(Mapping& m, FaceLayout layout);  // rewrites pad[kA..kY]; kCustom is a no-op
 const char* face_layout_label(FaceLayout l);            // for the UI
+// Xbox-style prompts (docs/button-glyphs.md): out[i] is the host face button (0..3 = Xbox A, B, X, Y)
+// that drives the Wii U's face action kA + i. False unless the four face bindings use each host face
+// button once and are not by position, which keeps the game's own look.
+bool face_glyph_targets(const Mapping& m, int out[4]);
 // the controller input that is the Wii U's A, B, X or Y (action kA..kY) in the current mapping, for
 // the overlay's own menus and on-screen keyboard (confirm/back as in the game); unbound: by position
 int face_input(int action);

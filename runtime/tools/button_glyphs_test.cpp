@@ -42,6 +42,7 @@ constexpr std::array<uint32_t, 2> authored = {0xFFFFFFFF, 0xB0804042};
 constexpr std::array<uint32_t, 4> corners = {0xFFFFFFFF, 0x80A0C042, 0x00000000, 0xFFFFFF80};
 uint32_t printed_character;
 bool expect_xbox;
+std::array<int, 4> expect_letter{0, 1, 2, 3};  // the Xbox button each Wii U face is drawn as
 int picture_face;
 unsigned prints = 0, text_draws = 0, picture_draws = 0;
 uint32_t atlas = 0;
@@ -51,6 +52,7 @@ float label_centre = 0;
 std::array<uint32_t,4> font_records{};
 unsigned font_queries = 0;
 void layout(input_map::FaceLayout choice);
+void sword_on_x();
 
 constexpr uint32_t cluster = base + 0x3000;
 constexpr std::array<uint32_t, 5> groups = {base + 0x3200, base + 0x3600, base + 0x3800,
@@ -184,6 +186,17 @@ void positions_test() {
             for (uint32_t j = 0; j < 8; j++) assert(ld32(nodes[i] + 0x1C + 4*j) == authored_positions[i][j]);
     }
 
+    // Custom arrangement (Wii U B on Xbox X, Wii U X on Xbox B): each group goes to the place
+    // of the Xbox button that drives it, so B sits west and X east; A and Y keep their by-label places.
+    sword_on_x();
+    calculate(false);
+    for (uint32_t i = 0; i < 4; i++) same_point(position(face_panes[i]), original[expect_letter[i] ^ 1]);
+    same_point(position(face_panes[1]), original[3]);
+    same_point(position(face_panes[2]), original[0]);
+    layout(input_map::FaceLayout::kPosition);
+    calculate(false);
+    for (uint32_t i = 0; i < 4; i++) same_point(position(face_panes[i]), original[i]);
+
     // Different viewport origin/scale, and animated container scale/rotation: compare the
     // actual centres in common-parent space, not hard-coded screen offsets or cached globals.
     stf32(cluster + 0x1C, 700);
@@ -247,13 +260,24 @@ void layout(input_map::FaceLayout choice) {
     if (choice == input_map::FaceLayout::kCustom) mapping.pad[input_map::kX] = input_map::kPadLB;
     input_map::set_current(mapping, false);
     expect_xbox = choice == input_map::FaceLayout::kLabels;
+    expect_letter = {0, 1, 2, 3};
+}
+
+void sword_on_x() {
+    auto mapping = input_map::Mapping::defaults();
+    input_map::apply_face_layout(mapping, input_map::FaceLayout::kLabels);
+    std::swap(mapping.pad[input_map::kB], mapping.pad[input_map::kX]);
+    input_map::set_current(mapping, false);
+    expect_xbox = true;
+    expect_letter = {0, 2, 1, 3};
 }
 
 void print(uint32_t code) {
     Cpu c{};
     c.r[3] = writer;
     c.r[4] = code;
-    printed_character = code;
+    const int face = button_glyphs::face_character(code);
+    printed_character = face >= 0 && expect_xbox ? 0xE000 + expect_letter[face] : code;
     hook_0286E9F0(&c);
     assert(c.r[3] == 0xC001);  // preserve the original function's return value
 }
@@ -513,6 +537,82 @@ void automatic_test() {
     layout(input_map::FaceLayout::kPosition);  // leave the manual default for later tests
 }
 
+void targets_test() {
+    int out[4];
+    auto mapping = input_map::Mapping::defaults();
+    assert(!input_map::face_glyph_targets(mapping, out));  // by position keeps the game's look
+    input_map::apply_face_layout(mapping, input_map::FaceLayout::kLabels);
+    assert(input_map::face_glyph_targets(mapping, out));
+    assert(out[0] == 0 && out[1] == 1 && out[2] == 2 && out[3] == 3);
+    std::swap(mapping.pad[input_map::kB], mapping.pad[input_map::kX]);
+    assert(input_map::face_glyph_targets(mapping, out));
+    assert(out[0] == 0 && out[1] == 2 && out[2] == 1 && out[3] == 3);
+    mapping.pad[input_map::kB] = mapping.pad[input_map::kA];  // one Xbox button for two faces
+    assert(!input_map::face_glyph_targets(mapping, out));
+    mapping.pad[input_map::kB] = input_map::kPadLB;  // a face on a shoulder button
+    assert(!input_map::face_glyph_targets(mapping, out));
+}
+
+// Sword on Xbox X: the dialog's B icon is printed as a blue X, the HUD's B button turns blue and
+// reads X, and switching the arrangement rebuilds text that baked the old letter.
+void custom_arrangement_test() {
+    st32(writer + 0x2C, list); st32(text_box + 0xFC, list); st32(list, 8);
+    layout(input_map::FaceLayout::kLabels);
+    st8(list + 6, 1);
+    sword_on_x();
+    button_glyphs::prepare_text_box(text_box);
+    assert(ld8(list + 6) == 0);  // cached letters changed: Print must run again
+    st16(list + 4, 0);
+    for (uint32_t face = 0; face < 4; face++) print(0xE000 + face);
+    for (uint32_t face = 0; face < 4; face++)
+        assert(button_glyphs::marked_face(ld8(first_quad + face * 0x30 + 0x2F)) == expect_letter[face]);
+    unsigned draws = text_draws;
+    draw();
+    assert(text_draws == draws + 1);
+    sword_on_x();  // same arrangement, new generation: the cache stays valid
+    draws = text_draws;
+    draw();
+    assert(text_draws == draws);
+    layout(input_map::FaceLayout::kLabels);
+    st8(list + 6, 1);
+    button_glyphs::prepare_text_box(text_box);
+    assert(ld8(list + 6) == 0);
+
+    // HUD letter panes, and a same-named pane outside a face picture (CommandA's T_A_00).
+    const uint32_t letters = base + 0xB100;
+    std::strcpy((char*)mem::ptr(picture + 0x80), "P_B_00");
+    st32(text_box + 0x0C, picture); st32(text_box + 0xA4, letters); st16(text_box + 0xCE, 1);
+    std::strcpy((char*)mem::ptr(text_box + 0x80), "T_B_00");
+    st16(letters, 'B');
+    sword_on_x();
+    st8(list + 6, 1);
+    button_glyphs::prepare_text_box(text_box);
+    assert(ld16(letters) == 'X' && ld8(list + 6) == 0);
+    layout(input_map::FaceLayout::kPosition);
+    st8(list + 6, 1);
+    button_glyphs::prepare_text_box(text_box);
+    assert(ld16(letters) == 'B' && ld8(list + 6) == 0);
+    std::strcpy((char*)mem::ptr(picture + 0x80), "N_Center_01");
+    sword_on_x();
+    button_glyphs::prepare_text_box(text_box);
+    assert(ld16(letters) == 'B');
+    std::memset(mem::ptr(text_box + 0x80), 0, 24);
+    st32(text_box + 0x0C, 0);
+
+    for (auto name : {"P_A_00", "P_B_00", "P_X_00", "P_Y_00"}) {
+        std::memset(mem::ptr(picture), 0, 0xC0);
+        std::strcpy((char*)mem::ptr(picture + 0x80), name);
+        picture_face = button_glyphs::face_picture(name);
+        for (uint32_t i = 0; i < 4; i++) st32(picture + 0xA8 + i * 4, corners[i]);
+        Cpu c{};
+        c.r[3] = picture;
+        hook_02874D54(&c);  // the stub checks the colour of the Xbox button bound to this face
+        assert(c.r[3] == 0xC003);
+        for (uint32_t i = 0; i < 4; i++) assert(ld32(picture + 0xA8 + i * 4) == corners[i]);
+    }
+    layout(input_map::FaceLayout::kPosition);
+}
+
 }  // namespace
 
 extern "C" void f_028766CC_orig(Cpu* c) { matrix(c); }
@@ -555,7 +655,7 @@ extern "C" void ppc_dispatch(Cpu* c) {
 // Simulate the original writer, including a full list and heap reuse that resets quad flags.
 extern "C" void f_0286E9F0_orig(Cpu* c) {
     prints++;
-    assert(c->r[4] == printed_character);  // the requested letter must never be swapped
+    assert(c->r[4] == printed_character);  // only a custom arrangement swaps the requested letter
     const uint32_t target = ld32(c->r[3] + 0x2C);
     if (target) {
         const uint32_t count = ld16(target + 4);
@@ -612,7 +712,7 @@ extern "C" void f_028F7C7C_orig(Cpu* c) {
 extern "C" void f_02874D54_orig(Cpu* c) {
     picture_draws++;
     for (uint32_t i = 0; i < 4; i++) {
-        const uint32_t want = expect_xbox && picture_face >= 0 ? button_glyphs::tint(corners[i], picture_face) : corners[i];
+        const uint32_t want = expect_xbox && picture_face >= 0 ? button_glyphs::tint(corners[i], expect_letter[picture_face]) : corners[i];
         assert(ld32(c->r[3] + 0xA8 + i * 4) == want);
     }
     c->r[3] = 0xC003;
@@ -777,6 +877,8 @@ int main() {
     shoulders_test();
     font_fallback_test();
     automatic_test();
+    targets_test();
+    custom_arrangement_test();
 
 #ifdef _WIN32
     VirtualFree(memory, 0, MEM_RELEASE);

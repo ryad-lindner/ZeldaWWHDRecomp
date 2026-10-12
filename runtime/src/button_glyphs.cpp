@@ -31,29 +31,49 @@ namespace {
 // so later layout changes still reach text cached in either mode.
 std::atomic<bool> labels_used{false};
 
-bool xbox_style() {
-    // Per guest thread: layouts can be recorded on multiple cores. Each set_current invalidates
-    // the cached choice, including transitions through custom bindings. No SDL/AppKit dependency.
-    thread_local uint32_t generation = ~0u;
-    thread_local bool enabled = false;
-    const uint32_t now = input_map::generation();
-    if (now != generation) {
-        enabled = input_map::face_layout(input_map::current()) == input_map::FaceLayout::kLabels;
-        if (enabled) labels_used.store(true, std::memory_order_relaxed);
-        generation = now;
-    }
-    return enabled;
-}
-
-// By label live now, or it has been on at least once in this session.
-bool marking() { return xbox_style() || labels_used.load(std::memory_order_relaxed); }
-
 // The first activation happens against text cached in stock mode, which carries no markers the
 // hooks could recognise. Each text box is therefore rebuilt once: the game re-runs Print, which
 // marks the new quads. The registry is a one-shot switch (only consulted after activation) and
-// never identifies glyphs; it cannot go stale because it only ever forces a rebuild.
+// never identifies glyphs; it cannot go stale because it only ever forces a rebuild. A change of
+// the drawn letters clears it, since Print bakes the letter into the cached glyph.
 std::mutex rebuilt_mutex;
 std::unordered_set<uint32_t> rebuilt;  // text boxes rebuilt since by label was first used (or the last state load)
+
+struct Style {
+    bool xbox = false;
+    std::array<int, 4> letter{0, 1, 2, 3};  // the Xbox button each Wii U face A/B/X/Y is drawn as
+};
+std::atomic<uint32_t> drawn_letters{0xE4};  // Style::letter packed two bits each; 0xE4 = A B X Y
+
+const Style& style() {
+    // Per guest thread: layouts can be recorded on multiple cores. Each set_current invalidates
+    // the cached choice, including transitions through custom bindings. No SDL/AppKit dependency.
+    thread_local uint32_t generation = ~0u;
+    thread_local Style current;
+    const uint32_t now = input_map::generation();
+    if (now != generation) {
+        int targets[4];
+        current.xbox = input_map::face_glyph_targets(input_map::current(), targets);
+        uint32_t packed = 0;
+        for (int i = 0; i < 4; i++) {
+            current.letter[i] = current.xbox ? targets[i] : i;
+            packed |= uint32_t(current.letter[i]) << (2 * i);
+        }
+        if (current.xbox) labels_used.store(true, std::memory_order_relaxed);
+        if (drawn_letters.exchange(packed) != packed) {
+            std::lock_guard lock(rebuilt_mutex);
+            rebuilt.clear();
+        }
+        generation = now;
+    }
+    return current;
+}
+
+bool xbox_style() { return style().xbox; }
+int drawn_face(int face) { return style().letter[face]; }
+
+// Xbox style live now, or it has been on at least once in this session.
+bool marking() { return xbox_style() || labels_used.load(std::memory_order_relaxed); }
 bool first_rebuild(uint32_t text_box) {
     if (!labels_used.load(std::memory_order_relaxed)) return false;
     std::lock_guard lock(rebuilt_mutex);
@@ -164,6 +184,14 @@ int shoulder_box(uint32_t box) {
     return length == 2 && ld16(text) == 'Z' && ld16(text + 2) == letter ? shoulder : -1;
 }
 
+// A HUD letter pane inside its own face picture; CommandA's floating T_A_00 has another parent.
+int face_letter_box(uint32_t box) {
+    const int face = button_glyphs::face_text(pane_name(box));
+    const uint32_t parent = face >= 0 ? ld32(box + 0x0C) : 0;
+    if (!parent || button_glyphs::face_picture(pane_name(parent)) != face) return -1;
+    return ld32(box + 0xA4) && ld16(box + 0xCE) == 1 ? face : -1;
+}
+
 void style(std::vector<SavedWord>& saved, uint32_t address, int face) {
     const uint32_t rgba = ld32(address);
     saved.push_back({address, rgba});
@@ -235,8 +263,10 @@ void button_glyphs::calculate_pane(Cpu* c, PpcFunc calculate) {
     // Only once by label has been used: until then the stock path stays untouched.
     if (marking()) c->r[5] = 1;
     if (!xbox_style()) return calculate(c);
+    // The Xbox place of button n is where the Wii U's own layout has face n ^ 1.
+    const int place = drawn_face(face) ^ 1;
     const Point from = button_centre(groups[face], pictures[face]);
-    const Point to = button_centre(groups[face ^ 1], pictures[face ^ 1]);
+    const Point to = button_centre(groups[place], pictures[place]);
     const float dx = to.x - from.x, dy = to.y - from.y;
     if (!std::isfinite(dx) || !std::isfinite(dy)) return calculate(c);
     const float x = (float)ldf32(pane + 0x1C), y = (float)ldf32(pane + 0x20);
@@ -252,6 +282,14 @@ void button_glyphs::calculate_pane(Cpu* c, PpcFunc calculate) {
 void button_glyphs::prepare_text_box(uint32_t text_box, Cpu* cpu) {
     const uint32_t list = ld32(text_box + 0xFC);
     if (!list) return;
+    if (const int letter = face_letter_box(text_box); letter >= 0 && marking()) {
+        const uint32_t text = ld32(text_box + 0xA4);
+        const uint16_t want = "ABXY"[drawn_face(letter)];
+        if (ld16(text) != want) {
+            st16(text, want);
+            st8(list + 6, 0);
+        }
+    }
     if (!ld8(list + 6)) {
         // The game rebuilds this text anyway; remember the box so it is not forced next frame.
         first_rebuild(text_box);
@@ -314,7 +352,9 @@ void button_glyphs::draw_text_box(Cpu* c, PpcFunc draw) {
 // (or is live), mark even in by-position mode: switching the setting must also affect text
 // built before that switch. Until then the flag byte is left untouched (stock path).
 extern "C" void hook_0286E9F0(Cpu* c) {
-    const int face = button_glyphs::face_character(c->r[4]);
+    const int printed = button_glyphs::face_character(c->r[4]);
+    const int face = printed >= 0 ? drawn_face(printed) : -1;
+    if (face >= 0) c->r[4] = 0xE000 + face;
     const int shoulder = button_glyphs::shoulder_character(c->r[4]);
     const uint32_t list = face >= 0 || shoulder >= 0 ? ld32(c->r[3] + 0x2C) : 0;
     const uint32_t count = list ? ld16(list + 4) : 0;
@@ -387,7 +427,7 @@ extern "C" void hook_02874D54(Cpu* c) {
     for (uint32_t i = 0; i < saved.size(); i++) {
         const uint32_t address = picture + 0xA8 + 4 * i;
         saved[i] = ld32(address);
-        st32(address, button_glyphs::tint(saved[i], face));
+        st32(address, button_glyphs::tint(saved[i], drawn_face(face)));
     }
     f_02874D54_orig(c);
     for (uint32_t i = 0; i < saved.size(); i++) st32(picture + 0xA8 + 4 * i, saved[i]);

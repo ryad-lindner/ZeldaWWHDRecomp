@@ -9,9 +9,14 @@ game's own button prompts match the controller in your hands:
 - **Shoulder buttons:** prompts read **R1 / R2** for R / ZR and **L1 / L2** for L / ZL, in the game's
   own HUD lettering.
 
-The letters themselves never change: *by label* already makes the Xbox A button do the game's A, so
-a prompt that says A still means the button printed A. **By position** and **custom** keep the game's
-original look. Switching takes effect immediately, without a restart, and also applies to text the
+With *by label* the letters never change: the Xbox A button already does the game's A, so a prompt
+that says A still means the button printed A. A **custom** arrangement of the four face buttons (each
+Xbox face button used once, e.g. the sword on X: Wii U B on Xbox X and Wii U X on Xbox B) gets the same
+treatment, with each Wii U button drawn as the Xbox button bound to it: the B prompt reads a blue X
+and the HUD's sword button sits west. The dialog icons are printed with the bound letter, the HUD's
+letter panes (`T_A_00`, `T_A_01`, `T_B_00`, `T_X_00`, `T_Y_00` inside their face picture) get it as
+text. **By position** and other custom mappings (a face on a shoulder button, one Xbox button for two
+faces) keep the game's original look. Switching takes effect immediately, without a restart, and also applies to text the
 game had already drawn. Nothing changes while you have never chosen *by label* in a session.
 
 No Nintendo artwork or font is shipped: the colours are applied while the game draws, and the
