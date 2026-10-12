@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Convert a Wind Waker HD save (cking.sav) into a GameCube-layout .gci (USA GZLE01 by default).
 
-usage: hd2gc.py cking.sav -o OUT.gci [--code GZLJ01] [--set-gc-name] [--template SOME.gci]
+usage: hd2gc.py cking.sav -o OUT.gci [--code GZLJ01|GZLP01] [--set-gc-name] [--template SOME.gci]
 
 Mainly the reverse direction for the round-trip check of gc2hd.py: the shared fields are copied
 field by field; HD-only data (UTF-16 names, the HD per-file area, the picture album) has no
@@ -37,7 +37,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("sav")
     ap.add_argument("-o", "--out", required=True)
-    ap.add_argument("--code", default="GZLE01", choices=["GZLE01", "GZLJ01"])
+    ap.add_argument("--code", default="GZLE01", choices=["GZLE01", "GZLJ01", "GZLP01"])
     ap.add_argument("--set-gc-name", action="store_true")
     ap.add_argument("--template")
     a = ap.parse_args()

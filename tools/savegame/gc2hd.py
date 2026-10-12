@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert a GameCube Wind Waker memory-card save (.gci, GZLE01 USA or GZLJ01 Japan) into a
+"""Convert a GameCube Wind Waker memory-card save (.gci, GZLE01 USA, GZLJ01 Japan or GZLP01 Europe) into a
 Wind Waker HD save (cking.sav, Wii U / Cemu `save/user/` layout).
 
 usage: gc2hd.py SAVE.gci -o OUTDIR [--drop-tingle-tuner] [--name NAME] [--quiet]

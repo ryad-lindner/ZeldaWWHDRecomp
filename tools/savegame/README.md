@@ -5,8 +5,8 @@
 Bring your GameCube Wind Waker progress to Wind Waker HD:
 
 1. Export the save from your memory card as a `.gci` file (Dolphin: Tools › Memory Card
-   Manager › Export; a real card: GCMM, Swiss or similar). USA (GZLE01) and Japanese (GZLJ01)
-   saves are supported; European (GZLP01) saves are rejected.
+   Manager › Export; a real card: GCMM, Swiss or similar). USA (GZLE01), Japanese (GZLJ01)
+   and European (GZLP01) saves are supported.
 2. Convert it (Python 3, nothing else needed):
 
    ```
@@ -42,7 +42,7 @@ functions.
 
 | Tool | Use |
 |---|---|
-| `gc2hd.py SAVE.gci -o OUTDIR` | GameCube memory-card save (`.gci`, USA GZLE01 or Japan GZLJ01) → `OUTDIR/cking.sav` for HD. `--batch SRC_DIR -o ROOT` converts every `.gci` below `SRC_DIR` into `ROOT/<path>/user/cking.sav`. Options: `--drop-tingle-tuner`, `--name NAME`. |
+| `gc2hd.py SAVE.gci -o OUTDIR` | GameCube memory-card save (`.gci`, USA GZLE01, Japan GZLJ01 or Europe GZLP01) → `OUTDIR/cking.sav` for HD. `--batch SRC_DIR -o ROOT` converts every `.gci` below `SRC_DIR` into `ROOT/<path>/user/cking.sav`. Options: `--drop-tingle-tuner`, `--name NAME`. |
 | `hd_save_info.py PATH` | progress of each file: hearts, rupees, magic, items, sword/shield, arrows/bombs, songs, Triforce shards, pearls, sail (Sail / Swift Sail), islands visited and charted, charts owned, dungeon items and bosses, return stage, time of day, deaths, New Game+ count, save counter. `PATH` = `cking.sav`, a `save/` or `save/user/` folder, or a `.gci`. `--short` (one line per file), `--json`, `--file N`. |
 | `hd2gc.py cking.sav -o OUT.gci` | the reverse direction (shared fields only), mainly for the round-trip check. `--set-gc-name` writes the HD name into the GameCube name field, `--template X.gci` copies the banner/icon block. |
 | `roundtrip_test.py cking.sav ...` | HD → GameCube layout → HD; every shared field must come back bit-identical (GameCube and HD checksums are verified on the way). |
@@ -128,9 +128,12 @@ field by field through them. Group by group:
 | HD player name (UTF-16) | the GameCube name; Japanese names are folded to ASCII when possible (full-width letters), otherwise "Link" (the USA HD font is Latin only) |
 
 Unused GameCube files (no player name) are copied as they are; HD shows them as "New Game"
-(save counter 0) and starting a game re-initialises them. GameCube USA and Japan saves have the
+(save counter 0) and starting a game re-initialises them. GameCube USA, Japan and Europe saves have the
 same layout (tww: `d_save.h` only differs for the demo build, event flags have no version
-conditionals); PAL saves are rejected (the save counter holds the language there; not checked).
+conditionals). PAL writes its language index into the card-level `card_savedata.save_count`
+(`mDoMemCdRWm_Store`) instead of a save counter; that word sits outside the three files and the
+converter never reads it (the game itself picks the first copy with a valid checksum, as here).
+European player names are Latin-1 and kept as they are. `test_regions.py` covers this.
 
 ## Validation (2026-10-05)
 

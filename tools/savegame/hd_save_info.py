@@ -87,7 +87,7 @@ def load(path):
                 break
     raw = open(path, "rb").read()
     if path.lower().endswith(".gci"):
-        code, slots = W.read_gci(raw, allow=(b"GZLE01", b"GZLJ01", b"GZLP01"))
+        code, slots = W.read_gci(raw)
         out = []
         for g in slots:
             if g is None:

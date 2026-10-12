@@ -6,7 +6,8 @@ project's verified WWHD decompilation).
 
 Sources
 -------
-GameCube (tww, GZLE01/GZLJ01 identical; d_save.h only differs for the demo build):
+GameCube (tww, GZLE01/GZLJ01/GZLP01 identical; d_save.h only differs for the demo build. PAL
+stores its language in card_savedata.save_count, outside the per-file data, which is not read):
   include/d/d_save.h            dSv_player_*_c, dSv_memBit_c, dSv_ocean_c, dSv_event_c, ...
   src/d/d_save.cpp              dSv_info_c::memory_to_card / card_to_memory (packed order)
   include/m_Do/m_Do_MemCardRWmng.h, src/m_Do/m_Do_MemCardRWmng.cpp
@@ -143,7 +144,7 @@ def put(buf, table, name, value):
 GCI_HEADER = 0x40
 CARD_BLOCK = 0x2000
 GC_REGIONS = {b"GZLE": "USA (GZLE01)", b"GZLJ": "Japan (GZLJ01)", b"GZLP": "Europe (GZLP01)"}
-SUPPORTED_GC = (b"GZLE01", b"GZLJ01")
+SUPPORTED_GC = (b"GZLE01", b"GZLJ01", b"GZLP01")
 
 
 class GciError(Exception):
@@ -174,8 +175,7 @@ def read_gci(raw, allow=SUPPORTED_GC):
     if raw[0:4] not in GC_REGIONS:
         raise GciError("not a Wind Waker save (game code %r)" % code)
     if code not in allow:
-        raise GciError("unsupported region %s: only %s are supported (PAL saves store the language "
-                       "in the save counter and were not checked)" %
+        raise GciError("unsupported region %s: only %s are supported" %
                        (GC_REGIONS[raw[0:4]], ", ".join(c.decode() for c in allow)))
     if raw[8:15] != b"gczelda":
         raise GciError("unexpected file name %r (expected gczelda)" % raw[8:40].rstrip(b"\0"))
@@ -340,7 +340,7 @@ def hd_name(extras_slot):
 # player names
 
 def decode_gc_name(raw, code):
-    """the GC player name (info.player_name, NUL-terminated, ASCII for USA, Shift-JIS for Japan)"""
+    """the GC player name (info.player_name, NUL-terminated, Latin-1 for USA/Europe, Shift-JIS for Japan)"""
     raw = raw.split(b"\0", 1)[0]
     if code[3:4] == b"J":
         return raw.decode("shift_jis", "replace")
